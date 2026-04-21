@@ -5,7 +5,7 @@
   "traffic_label": "clicks",
   "checkout_label": "Entry Checkout",
   "tiers": [
-    { "name": "Core AI Coach",       "price":    17, "take_rate": 0.06, "kind": "core" },
+    { "name": "Core AI Coach",       "price":    17, "take_rate": 0.10, "kind": "core" },
     { "name": "Spec Dump Override",  "price":    37, "take_rate": 0.35, "kind": "bump" },
     { "name": "Discovery Rebuild",   "price":    97, "take_rate": 0.25, "kind": "bump" },
     { "name": "Implementation Lab",  "price":  1497, "take_rate": 0.08, "kind": "ascension" },

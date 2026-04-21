@@ -113,7 +113,7 @@
             <input type="number" id="traffic-input" class="control__input control__traffic-input" value="2500" min="0" step="1" />
           </div>
         </div>
-      <div class="control"><div class="control__meta"><span class="control__kind control__kind--core">Entry</span><span class="control__name">Core AI Coach</span></div><div class="control__field"><input type="number" class="control__input" data-tier-idx="0" value="6" min="0" max="100" step="0.5" /><span class="control__suffix">%</span></div></div>
+      <div class="control"><div class="control__meta"><span class="control__kind control__kind--core">Entry</span><span class="control__name">Core AI Coach</span></div><div class="control__field"><input type="number" class="control__input" data-tier-idx="0" value="10" min="0" max="100" step="0.5" /><span class="control__suffix">%</span></div></div>
       <div class="control"><div class="control__meta"><span class="control__kind control__kind--bump">Order Bump</span><span class="control__name">Spec Dump Override</span></div><div class="control__field"><input type="number" class="control__input" data-tier-idx="1" value="35" min="0" max="100" step="0.5" /><span class="control__suffix">%</span></div></div>
       <div class="control"><div class="control__meta"><span class="control__kind control__kind--bump">Order Bump</span><span class="control__name">Discovery Rebuild</span></div><div class="control__field"><input type="number" class="control__input" data-tier-idx="2" value="25" min="0" max="100" step="0.5" /><span class="control__suffix">%</span></div></div>
       <div class="control"><div class="control__meta"><span class="control__kind control__kind--ascension">Ascension</span><span class="control__name">Implementation Lab</span></div><div class="control__field"><input type="number" class="control__input" data-tier-idx="3" value="8" min="0" max="100" step="0.5" /><span class="control__suffix">%</span></div></div>
@@ -124,7 +124,7 @@
   </div>
 
 <script>
-const CONFIG = {"traffic": 2500, "traffic_label": "clicks", "checkout_label": "Entry Checkout", "tiers": [{"name": "Core AI Coach", "price": 17, "take_rate": 0.06, "kind": "core"}, {"name": "Spec Dump Override", "price": 37, "take_rate": 0.35, "kind": "bump"}, {"name": "Discovery Rebuild", "price": 97, "take_rate": 0.25, "kind": "bump"}, {"name": "Implementation Lab", "price": 1497, "take_rate": 0.08, "kind": "ascension"}, {"name": "Option A \u2014 The BrainTrust Council \u00b7 12 months", "price": 15000, "take_rate": 0.04, "kind": "ascension"}]};
+const CONFIG = {"traffic": 2500, "traffic_label": "clicks", "checkout_label": "Entry Checkout", "tiers": [{"name": "Core AI Coach", "price": 17, "take_rate": 0.1, "kind": "core"}, {"name": "Spec Dump Override", "price": 37, "take_rate": 0.35, "kind": "bump"}, {"name": "Discovery Rebuild", "price": 97, "take_rate": 0.25, "kind": "bump"}, {"name": "Implementation Lab", "price": 1497, "take_rate": 0.08, "kind": "ascension"}, {"name": "Option A \u2014 The BrainTrust Council \u00b7 12 months", "price": 15000, "take_rate": 0.04, "kind": "ascension"}]};
 
 function fmtMoney(n) { return '$' + n.toLocaleString(); }
 function fmtPct(rate) { return Math.round(rate * 100) + '%'; }
