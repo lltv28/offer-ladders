@@ -8,8 +8,8 @@
     { "name": "Core AI Coach",       "price":    17, "take_rate": 0.10, "kind": "core" },
     { "name": "Spec Dump Override",  "price":    37, "take_rate": 0.35, "kind": "bump" },
     { "name": "Discovery Rebuild",   "price":    97, "take_rate": 0.25, "kind": "bump" },
-    { "name": "Implementation Lab",  "price":  1497, "take_rate": 0.08, "kind": "ascension" },
-    { "name": "Option A — The BrainTrust Council · 12 months", "price": 15000, "take_rate": 0.04, "kind": "ascension" }
+    { "name": "Implementation Lab",  "price":  1497, "take_rate": 0.12, "kind": "ascension" },
+    { "name": "Option A — The BrainTrust Council · 12 months", "price": 15000, "take_rate": 0.06, "kind": "ascension" }
   ],
   "disclaimer": "This is an example model for visualization only. Inputs and outputs are hypothetical and do not constitute a promise, forecast, or guarantee of results."
 }
