@@ -1,0 +1,430 @@
+#!/usr/bin/env python3
+"""
+Offer Ladder Visualizer -- multi-client generator.
+
+Reads every clients/<slug>/config.json file and writes a sibling index.html
+containing an interactive offer-ladder visualization. Also writes a generic
+landing page at the repo root.
+
+Usage:
+    python offer-ladder.py            # regenerate all client pages
+    python offer-ladder.py --new "Client Full Name"
+                                       # scaffold a new client folder with a
+                                       # slug like "client-full-name-123456"
+
+Tier kinds:
+    "core"      -- entry product. take_rate = fraction of traffic.
+    "bump"      -- checkout bump. take_rate = fraction of core buyers.
+    "ascension" -- parallel path from core. take_rate = fraction of core buyers.
+"""
+
+from pathlib import Path
+import argparse
+import html as html_lib
+import json
+import random
+import re
+import string
+import sys
+
+
+# ---------------------------------------------------------------------------
+# Slug / config helpers
+# ---------------------------------------------------------------------------
+
+def slugify(name, random_id_length=6):
+    base = re.sub(r"[^a-zA-Z0-9]+", "-", name.strip().lower()).strip("-")
+    if not base:
+        raise ValueError("Client name slug came out empty.")
+    rand = "".join(random.choices(string.digits, k=random_id_length))
+    return f"{base}-{rand}"
+
+
+def validate_config(config, source=""):
+    required = ["client_name", "traffic", "tiers"]
+    for key in required:
+        if key not in config:
+            raise ValueError(f"{source}: missing required key {key!r}")
+    kinds = [t.get("kind") for t in config["tiers"]]
+    if kinds.count("core") != 1:
+        raise ValueError(f"{source}: tiers must contain exactly one 'core' kind")
+
+
+def load_client_configs(clients_dir):
+    configs = []
+    for child in sorted(clients_dir.iterdir()):
+        if not child.is_dir() or child.name.startswith("_") or child.name.startswith("."):
+            continue
+        config_path = child / "config.json"
+        if not config_path.exists():
+            continue
+        try:
+            cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            print(f"  SKIP  {child.name}: invalid JSON ({e})", file=sys.stderr)
+            continue
+        validate_config(cfg, source=str(config_path))
+        configs.append((child, cfg))
+    return configs
+
+
+# ---------------------------------------------------------------------------
+# HTML rendering (one client page)
+# ---------------------------------------------------------------------------
+
+def build_control(i, tier):
+    name = html_lib.escape(tier["name"])
+    kind = tier["kind"]
+    rate_pct = f"{tier['take_rate'] * 100:g}"
+    kind_label = {"core": "Entry", "bump": "Order Bump", "ascension": "Ascension"}[kind]
+    return (
+        '<div class="control">'
+        f'<div class="control__meta"><span class="control__kind control__kind--{kind}">{kind_label}</span>'
+        f'<span class="control__name">{name}</span></div>'
+        '<div class="control__field">'
+        f'<input type="number" class="control__input" data-tier-idx="{i}" value="{rate_pct}" min="0" max="100" step="0.5" />'
+        '<span class="control__suffix">%</span>'
+        '</div>'
+        '</div>'
+    )
+
+
+def render_client_html(config):
+    client = html_lib.escape(config["client_name"])
+    title = html_lib.escape(config.get("title", "Offer Ladder"))
+    disclaimer = html_lib.escape(config.get(
+        "disclaimer",
+        "This is an example model for visualization only. Inputs and outputs are hypothetical and do not constitute a promise, forecast, or guarantee of results.",
+    ))
+    controls = "\n      ".join(build_control(i, t) for i, t in enumerate(config["tiers"]))
+    cfg_json = json.dumps({
+        "traffic": config["traffic"],
+        "traffic_label": config.get("traffic_label", "clicks"),
+        "checkout_label": config.get("checkout_label", "Entry Checkout"),
+        "tiers": config["tiers"],
+    })
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>{client} &mdash; Offer Ladder</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f4f5f7;
+    margin: 0;
+    padding: 48px 24px;
+    color: #212529;
+  }}
+  .container {{
+    max-width: 1260px;
+    margin: 0 auto;
+    background: linear-gradient(180deg, #f4faf5 0%, #e8f2ec 100%);
+    border-radius: 28px;
+    padding: 44px 48px 40px;
+    box-shadow: 0 2px 12px rgba(31, 74, 50, 0.06);
+  }}
+  .client-name {{ text-align: center; font-size: 12px; font-weight: 600; letter-spacing: 0.2em; color: #6c757d; text-transform: uppercase; margin-bottom: 6px; }}
+  .title {{ text-align: center; font-size: 15px; font-weight: 700; letter-spacing: 0.18em; color: #2d6a4f; text-transform: uppercase; margin-bottom: 36px; }}
+  .layout {{ display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 36px; align-items: start; }}
+  .main {{ min-width: 0; }}
+  .ladder {{ display: flex; flex-direction: column; align-items: stretch; }}
+  .row {{ display: grid; grid-template-columns: 260px 1fr; gap: 28px; align-items: center; }}
+  .row--bump {{ grid-template-columns: 220px 1fr; }}
+  .card {{ background: #ffffff; border-radius: 18px; padding: 20px 22px; text-align: left; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); min-height: 108px; display: flex; flex-direction: column; justify-content: center; }}
+  .card--bump {{ padding: 14px 18px; min-height: 78px; border-radius: 14px; margin-left: 40px; background: #fbfdfb; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03); }}
+  .card__eyebrow {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #8a9a91; font-weight: 700; margin-bottom: 8px; }}
+  .card--bump .card__eyebrow {{ margin-bottom: 4px; }}
+  .card__price {{ font-size: 32px; font-weight: 700; color: #212529; line-height: 1.05; margin-bottom: 6px; }}
+  .card--bump .card__price {{ font-size: 22px; margin-bottom: 2px; }}
+  .card__name {{ font-size: 14px; font-weight: 500; color: #495057; line-height: 1.3; }}
+  .card--bump .card__name {{ font-size: 13px; }}
+  .math {{ display: flex; flex-direction: column; gap: 4px; padding: 6px 4px; }}
+  .math--bump {{ gap: 2px; padding: 4px 4px; }}
+  .math__line {{ display: flex; align-items: baseline; gap: 10px; font-size: 15px; color: #495057; }}
+  .math--bump .math__line {{ font-size: 13px; }}
+  .math__value {{ font-variant-numeric: tabular-nums; font-weight: 700; color: #212529; min-width: 24px; display: inline-block; font-size: 18px; }}
+  .math--bump .math__value {{ font-size: 15px; }}
+  .math__label {{ color: #6c757d; font-size: 14px; }}
+  .math--bump .math__label {{ font-size: 12px; }}
+  .math__aside {{ margin-left: auto; font-size: 12px; color: #8a9a91; background: #eef3ef; padding: 3px 10px; border-radius: 999px; font-weight: 600; white-space: nowrap; }}
+  .math--bump .math__aside {{ font-size: 11px; padding: 2px 8px; }}
+  .math__line--result .math__result {{ font-size: 22px; font-weight: 700; color: #2d6a4f; font-variant-numeric: tabular-nums; }}
+  .math--bump .math__line--result .math__result {{ font-size: 17px; }}
+  .math__line--op .math__value {{ color: #8a9a91; font-weight: 500; }}
+  .math__note {{ font-size: 14px; color: #495057; font-style: italic; }}
+  .checkout-group {{ position: relative; border: 1.5px dashed rgba(45, 106, 79, 0.3); border-radius: 22px; padding: 28px 20px 22px; margin: 4px 0; background: rgba(255, 255, 255, 0.35); }}
+  .checkout-group__label {{ position: absolute; top: -10px; left: 28px; background: linear-gradient(180deg, #f4faf5 0%, #f4faf5 60%, #edf5ef 100%); padding: 2px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #2d6a4f; border-radius: 999px; }}
+  .checkout-group__body {{ display: flex; flex-direction: column; gap: 12px; }}
+  .arrow-vert {{ display: grid; grid-template-columns: 260px 1fr; gap: 28px; align-items: center; margin: 2px 0; }}
+  .arrow-vert__line {{ grid-column: 1; justify-self: center; width: 2px; height: 22px; background: #c3d4c9; }}
+  .arrow-vert__rate {{ grid-column: 2; justify-self: start; font-size: 12px; font-weight: 700; color: #2d6a4f; background: #d4edda; padding: 5px 12px; border-radius: 999px; letter-spacing: 0.04em; text-transform: uppercase; }}
+  .arrow-vert--choice {{ display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 10px 0 6px; }}
+  .arrow-vert--choice .arrow-vert__line {{ width: 2px; height: 22px; background: #c3d4c9; }}
+  .arrow-vert--choice .arrow-vert__rate {{ grid-column: auto; justify-self: auto; }}
+  .ascension-row {{ display: flex; gap: 20px; align-items: stretch; }}
+  .ascension-panel {{ flex: 1 1 0; min-width: 0; background: #ffffff; border-radius: 18px; padding: 22px 22px 20px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); display: flex; flex-direction: column; gap: 14px; }}
+  .ascension-panel__header {{ display: flex; flex-direction: column; }}
+  .ascension-panel__header .card__eyebrow {{ margin-bottom: 8px; }}
+  .ascension-panel__header .card__price {{ font-size: 32px; font-weight: 700; color: #212529; line-height: 1.05; margin-bottom: 4px; }}
+  .ascension-panel__header .card__name {{ font-size: 14px; font-weight: 500; color: #495057; line-height: 1.3; }}
+  .ascension-panel__math {{ display: flex; flex-direction: column; gap: 4px; padding-top: 14px; border-top: 1px solid rgba(45, 106, 79, 0.12); }}
+  .caption {{ text-align: center; margin-top: 40px; padding-top: 28px; border-top: 1px solid rgba(45, 106, 79, 0.12); font-size: 15px; color: #495057; line-height: 1.6; }}
+  .caption__total {{ font-size: 28px; font-weight: 700; color: #2d6a4f; display: block; margin-bottom: 6px; font-variant-numeric: tabular-nums; }}
+  .caption__hl {{ color: #2d6a4f; font-weight: 700; }}
+  .controls {{ position: sticky; top: 24px; background: #ffffff; border-radius: 18px; padding: 22px 20px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }}
+  .controls__title {{ font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #2d6a4f; margin-bottom: 14px; }}
+  .control {{ margin-bottom: 14px; }}
+  .control:last-of-type {{ margin-bottom: 18px; }}
+  .control--traffic {{ padding-bottom: 14px; border-bottom: 1px solid rgba(45, 106, 79, 0.1); margin-bottom: 18px; }}
+  .control__meta {{ display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }}
+  .control__kind {{ font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: #eef3ef; color: #2d6a4f; }}
+  .control__kind--bump {{ background: #fff3e0; color: #b06a1b; }}
+  .control__kind--ascension {{ background: #e3f1fb; color: #1f6390; }}
+  .control__name {{ font-size: 13px; color: #212529; font-weight: 500; }}
+  .control__field {{ position: relative; display: flex; align-items: center; }}
+  .control__input {{ width: 100%; padding: 8px 30px 8px 12px; border: 1px solid #d4dcd7; border-radius: 10px; font-size: 15px; font-weight: 600; color: #212529; font-variant-numeric: tabular-nums; background: #fbfdfb; transition: border-color 0.15s; }}
+  .control__input:focus {{ outline: none; border-color: #2d6a4f; background: #ffffff; }}
+  .control__suffix {{ position: absolute; right: 12px; font-size: 13px; color: #8a9a91; font-weight: 600; pointer-events: none; }}
+  .control__traffic-input {{ padding-right: 12px; }}
+  .controls__button {{ width: 100%; padding: 12px; background: #2d6a4f; color: #ffffff; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; letter-spacing: 0.04em; cursor: pointer; transition: background 0.15s; }}
+  .controls__button:hover {{ background: #1f4a37; }}
+  .controls__button:active {{ background: #183a2b; }}
+  .disclaimer {{ margin-top: 28px; padding: 14px 18px; border-radius: 12px; background: rgba(255, 255, 255, 0.5); border: 1px solid rgba(45, 106, 79, 0.1); font-size: 12px; color: #6c757d; line-height: 1.5; text-align: center; font-style: italic; }}
+  @media (max-width: 900px) {{ .layout {{ grid-template-columns: 1fr; }} .controls {{ position: static; }} }}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="client-name">{client}</div>
+    <div class="title">{title}</div>
+    <div class="layout">
+      <div class="main">
+        <div class="ladder" id="ladder"></div>
+        <div class="caption" id="caption"></div>
+        <div class="disclaimer">{disclaimer}</div>
+      </div>
+      <aside class="controls">
+        <div class="controls__title">Take Rates</div>
+        <div class="control control--traffic">
+          <div class="control__meta">
+            <span class="control__kind">Traffic</span>
+            <span class="control__name">{html_lib.escape(config.get('traffic_label', 'clicks'))}</span>
+          </div>
+          <div class="control__field">
+            <input type="number" id="traffic-input" class="control__input control__traffic-input" value="{config['traffic']}" min="0" step="1" />
+          </div>
+        </div>
+      {controls}
+        <button id="recalc-btn" class="controls__button">Recalculate</button>
+      </aside>
+    </div>
+  </div>
+
+<script>
+const CONFIG = {cfg_json};
+
+function fmtMoney(n) {{ return '$' + n.toLocaleString(); }}
+function fmtPct(rate) {{ return Math.round(rate * 100) + '%'; }}
+function esc(s) {{ return String(s).replace(/[&<>"']/g, c => ({{ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }}[c])); }}
+
+function computeTiers(traffic, trafficLabel, tiersCfg) {{
+  const out = [];
+  let lastAsc = {{ count: traffic, name: trafficLabel }};
+  let core = null;
+  for (const t of tiersCfg) {{
+    let sourceCount, sourceName, count;
+    if (t.kind === 'core') {{
+      sourceCount = lastAsc.count; sourceName = lastAsc.name;
+      count = Math.round(sourceCount * t.take_rate);
+      core = {{ count, name: t.name }};
+      lastAsc = {{ count, name: t.name }};
+    }} else if (t.kind === 'bump') {{
+      if (!core) throw new Error('bump before core');
+      sourceCount = core.count; sourceName = core.name + ' buyers';
+      count = Math.round(sourceCount * t.take_rate);
+    }} else if (t.kind === 'ascension') {{
+      if (!core) throw new Error('ascension before core');
+      sourceCount = core.count; sourceName = core.name + ' buyers';
+      count = Math.round(sourceCount * t.take_rate);
+    }}
+    out.push({{ ...t, buyers: count, source_count: sourceCount, source_name: sourceName, revenue: count * t.price }});
+  }}
+  return out;
+}}
+
+function renderMath(t, isBump) {{
+  const w = t.buyers === 1 ? 'buyer' : 'buyers';
+  const aside = `${{fmtPct(t.take_rate)}} of ${{t.source_count.toLocaleString()}} ${{esc(t.source_name)}}`;
+  const cls = isBump ? ' math--bump' : '';
+  return `<div class="math${{cls}}"><div class="math__line"><span class="math__value">${{t.buyers.toLocaleString()}}</span><span class="math__label">${{w}}</span><span class="math__aside">${{aside}}</span></div><div class="math__line math__line--op"><span class="math__value">&times;</span><span class="math__label">${{fmtMoney(t.price)}} each</span></div><div class="math__line math__line--result"><span class="math__value">=</span><span class="math__result">${{fmtMoney(t.revenue)}}</span><span class="math__label">revenue</span></div></div>`;
+}}
+
+function renderCard(t, isBump) {{
+  const eyebrow = isBump ? 'Order Bump' : (t.kind === 'core' ? 'Entry' : 'Tier');
+  const cls = isBump ? 'card card--bump' : 'card';
+  const prefix = isBump ? '+' : '';
+  return `<div class="${{cls}}"><div class="card__eyebrow">${{eyebrow}}</div><div class="card__price">${{prefix}}${{fmtMoney(t.price)}}</div><div class="card__name">${{esc(t.name)}}</div></div>`;
+}}
+
+function renderTierRow(t, isBump) {{
+  const rowCls = isBump ? 'row row--bump' : 'row';
+  return `<div class="${{rowCls}}">${{renderCard(t, isBump)}}${{renderMath(t, isBump)}}</div>`;
+}}
+
+function renderStart(traffic, label) {{
+  return `<div class="row row--start"><div class="card card--start"><div class="card__eyebrow">Starting Traffic</div><div class="card__price">${{traffic.toLocaleString()}}</div><div class="card__name">${{esc(label)}}</div></div><div class="math math--start"><div class="math__note">Top of the funnel &mdash; ${{traffic.toLocaleString()}} ${{esc(label)}} enter.</div></div></div>`;
+}}
+
+function renderArrow(t) {{
+  return `<div class="arrow-vert"><div class="arrow-vert__line"></div><div class="arrow-vert__rate">${{fmtPct(t.take_rate)}} convert to entry</div></div>`;
+}}
+
+function renderChoiceArrow(first) {{
+  const label = `From ${{first.source_count.toLocaleString()}} ${{esc(first.source_name)}} &mdash; choose a path`;
+  return `<div class="arrow-vert arrow-vert--choice"><div class="arrow-vert__line"></div><div class="arrow-vert__rate">${{label}}</div></div>`;
+}}
+
+function renderCheckoutGroup(label, core, bumps) {{
+  const inner = [renderTierRow(core, false), ...bumps.map(b => renderTierRow(b, true))].join('');
+  return `<div class="checkout-group"><div class="checkout-group__label">${{esc(label)}}</div><div class="checkout-group__body">${{inner}}</div></div>`;
+}}
+
+function renderAscPanel(t) {{
+  const w = t.buyers === 1 ? 'buyer' : 'buyers';
+  const aside = `${{fmtPct(t.take_rate)}} of ${{t.source_count.toLocaleString()}} ${{esc(t.source_name)}}`;
+  return `<div class="ascension-panel"><div class="ascension-panel__header"><div class="card__eyebrow">Ascension Path</div><div class="card__price">${{fmtMoney(t.price)}}</div><div class="card__name">${{esc(t.name)}}</div></div><div class="ascension-panel__math"><div class="math__line"><span class="math__value">${{t.buyers.toLocaleString()}}</span><span class="math__label">${{w}}</span><span class="math__aside">${{aside}}</span></div><div class="math__line math__line--op"><span class="math__value">&times;</span><span class="math__label">${{fmtMoney(t.price)}} each</span></div><div class="math__line math__line--result"><span class="math__value">=</span><span class="math__result">${{fmtMoney(t.revenue)}}</span><span class="math__label">revenue</span></div></div></div>`;
+}}
+
+function renderAscRow(asc) {{
+  return `<div class="ascension-row">${{asc.map(renderAscPanel).join('')}}</div>`;
+}}
+
+function render() {{
+  const traffic = parseInt(document.getElementById('traffic-input').value, 10) || 0;
+  const inputs = document.querySelectorAll('.control__input[data-tier-idx]');
+  const tiersCfg = CONFIG.tiers.map((t, i) => {{
+    const input = Array.from(inputs).find(el => parseInt(el.dataset.tierIdx, 10) === i);
+    const rate = input ? (parseFloat(input.value) || 0) / 100 : t.take_rate;
+    return {{ ...t, take_rate: rate }};
+  }});
+  const tiers = computeTiers(traffic, CONFIG.traffic_label, tiersCfg);
+  const parts = [renderStart(traffic, CONFIG.traffic_label)];
+  let i = 0;
+  while (i < tiers.length) {{
+    const t = tiers[i];
+    if (t.kind === 'core') {{
+      parts.push(renderArrow(t));
+      const bumps = [];
+      let j = i + 1;
+      while (j < tiers.length && tiers[j].kind === 'bump') {{ bumps.push(tiers[j]); j++; }}
+      parts.push(renderCheckoutGroup(CONFIG.checkout_label, t, bumps));
+      i = j;
+    }} else if (t.kind === 'ascension') {{
+      const asc = [];
+      let j = i;
+      while (j < tiers.length && tiers[j].kind === 'ascension') {{ asc.push(tiers[j]); j++; }}
+      parts.push(renderChoiceArrow(asc[0]));
+      parts.push(renderAscRow(asc));
+      i = j;
+    }} else {{ i++; }}
+  }}
+  document.getElementById('ladder').innerHTML = parts.join('\\n');
+  const total = tiers.reduce((s, t) => s + t.revenue, 0);
+  const coreTier = tiers.find(t => t.kind === 'core');
+  const coreRev = coreTier ? coreTier.revenue : 0;
+  const bumpRev = tiers.filter(t => t.kind === 'bump').reduce((s, t) => s + t.revenue, 0);
+  const ascRev = total - coreRev - bumpRev;
+  const ascPct = total ? Math.round(ascRev / total * 100) : 0;
+  document.getElementById('caption').innerHTML = `<span class="caption__total">${{fmtMoney(total)}}</span>total revenue from <span class="caption__hl">${{traffic.toLocaleString()}} ${{esc(CONFIG.traffic_label)}}</span>&mdash; <span class="caption__hl">${{ascPct}}%</span> from mid and high-ticket ascension beyond the entry checkout.`;
+}}
+
+document.addEventListener('DOMContentLoaded', () => {{
+  render();
+  document.getElementById('recalc-btn').addEventListener('click', render);
+  document.querySelectorAll('.control__input, #traffic-input').forEach(el => {{
+    el.addEventListener('keydown', e => {{ if (e.key === 'Enter') render(); }});
+  }});
+}});
+</script>
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Landing page (generic, no client list)
+# ---------------------------------------------------------------------------
+
+def render_landing():
+    return """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Offer Ladder Visualizer</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f5f7; color: #212529; margin: 0; padding: 96px 24px; }
+  .box { max-width: 620px; margin: 0 auto; background: linear-gradient(180deg, #f4faf5 0%, #e8f2ec 100%); border-radius: 28px; padding: 48px; box-shadow: 0 2px 12px rgba(31, 74, 50, 0.06); text-align: center; }
+  h1 { font-size: 18px; letter-spacing: 0.18em; text-transform: uppercase; color: #2d6a4f; margin: 0 0 12px; }
+  p { font-size: 15px; color: #495057; line-height: 1.6; margin: 0; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>Offer Ladder Visualizer</h1>
+    <p>Private client tool. If you were sent a direct link, use that link to access your visualization.</p>
+  </div>
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def cmd_new(name, repo_root):
+    slug = slugify(name)
+    client_dir = repo_root / "clients" / slug
+    if client_dir.exists():
+        print(f"ERROR: {client_dir} already exists", file=sys.stderr)
+        return 1
+    client_dir.mkdir(parents=True)
+    template = (repo_root / "clients" / "_template" / "config.json").read_text(encoding="utf-8")
+    template = template.replace("CLIENT FULL NAME", name)
+    (client_dir / "config.json").write_text(template, encoding="utf-8")
+    print(f"Created {client_dir}")
+    print(f"  Edit {client_dir / 'config.json'} then run the generator to build index.html")
+    return 0
+
+
+def cmd_build(repo_root):
+    clients_dir = repo_root / "clients"
+    configs = load_client_configs(clients_dir)
+    for client_dir, cfg in configs:
+        html = render_client_html(cfg)
+        (client_dir / "index.html").write_text(html, encoding="utf-8")
+        print(f"  {client_dir.name}")
+    (repo_root / "index.html").write_text(render_landing(), encoding="utf-8")
+    print(f"  index.html (landing)")
+    print(f"\n{len(configs)} client page(s) built.")
+    return 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Offer Ladder multi-client generator")
+    parser.add_argument("--new", metavar="CLIENT_NAME", help="Scaffold a new client folder")
+    args = parser.parse_args(argv)
+    repo_root = Path(__file__).resolve().parent
+    if args.new:
+        return cmd_new(args.new, repo_root)
+    return cmd_build(repo_root)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
